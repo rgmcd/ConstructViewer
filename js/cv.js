@@ -56,18 +56,33 @@ var constructViewerWebGPU = constructViewerWebGPU || (function (win) {
     class Settings {
         constructor(
             fontSize = 20,
-            font = "normal " + fontSize + "px 'Courier New', monospace",
+            fontFamily = "'Courier New', monospace",
             vertPadding = 2,
             colWidth = fontSize + 2,
             speedMin = 2,
             speedMax = 5) {
 
             this.fontSize = fontSize;
-            this.font = font;
+            this.fontFamily = fontFamily;
+            this.fontWeight = "normal";
+            this.font = this.createFont();
             this.vertPadding = vertPadding;
             this.colWidth = colWidth;
             this.speedMin = speedMin;
             this.speedMax = speedMax;
+        }
+
+        createFont() {
+            return this.fontWeight + " " + this.fontSize + "px " + this.fontFamily;
+        }
+
+        setTheme(theme) {
+            this.fontSize = theme.fontSize;
+            this.fontFamily = theme.fontFamily;
+            this.fontWeight = theme.fontWeight;
+            this.vertPadding = theme.vertPadding;
+            this.colWidth = theme.colWidth;
+            this.font = this.createFont();
         }
     }
 
@@ -580,16 +595,20 @@ var constructViewerWebGPU = constructViewerWebGPU || (function (win) {
             if (index !== undefined) {
                 this.index = index;
             } else {
-                const rnd = randint(1, 100);
-
-                if (rnd <= 20) {
-                    this.index = 0;
-                } else if (rnd <= 30) {
-                    const ord = randint(48, 57);
-                    this.index = ord - 48 + 1;
+                if (christmasMode) {
+                    this.index = randint(1, activeChars.length - 1);
                 } else {
-                    const ord = randint(12448, 12543);
-                    this.index = ord - 12448 + 11;
+                    const rnd = randint(1, 100);
+
+                    if (rnd <= 20) {
+                        this.index = 0;
+                    } else if (rnd <= 30) {
+                        const ord = randint(48, 57);
+                        this.index = ord - 48 + 1;
+                    } else {
+                        const ord = randint(12448, 12543);
+                        this.index = ord - 12448 + 11;
+                    }
                 }
             }
 
@@ -601,11 +620,25 @@ var constructViewerWebGPU = constructViewerWebGPU || (function (win) {
         }
 
         assign_alpha(alpha) {
-            if (alpha === 1.0) {
+            if (christmasMode) {
+                this.assign_christmas_alpha(alpha);
+            } else if (alpha === 1.0) {
                 this.color = new Float32Array([224 / 255.0, 250 / 255.0, 224 / 255.0, 1.0]);
             } else {
                 this.color[3] = alpha;
             }
+        }
+
+        assign_christmas_alpha(alpha) {
+            const colors = [
+                [240 / 255.0, 45 / 255.0, 58 / 255.0],
+                [0 / 255.0, 210 / 255.0, 95 / 255.0],
+                [248 / 255.0, 214 / 255.0, 109 / 255.0],
+                [232 / 255.0, 250 / 255.0, 238 / 255.0]
+            ];
+            const color = alpha === 1.0 ? colors[2] : colors[this.index % colors.length];
+
+            this.color = new Float32Array([color[0], color[1], color[2], alpha]);
         }
     }
 
@@ -753,10 +786,27 @@ var constructViewerWebGPU = constructViewerWebGPU || (function (win) {
     const view = doc.getElementById("view");
     const soundToggle = doc.getElementById("sound-toggle");
     const soundVolume = doc.getElementById("sound-volume");
+    const christmasToggle = doc.getElementById("christmas-toggle");
     const settings = new Settings();
     const soundscape = new Soundscape();
     const construct = new Construct();
     const engine = new Engine(view);
+    const matrixTheme = {
+        fontSize: 20,
+        fontFamily: "'Courier New', monospace",
+        fontWeight: "normal",
+        vertPadding: 2,
+        colWidth: 22
+    };
+    const christmasTheme = {
+        fontSize: 22,
+        fontFamily: "Georgia, 'Times New Roman', serif",
+        fontWeight: "bold",
+        vertPadding: 3,
+        colWidth: 24
+    };
+    let activeChars = [];
+    let christmasMode = false;
     let iter = 0;
 
     win.addEventListener("load", function () {
@@ -774,23 +824,12 @@ var constructViewerWebGPU = constructViewerWebGPU || (function (win) {
     win.addEventListener("keydown", unlockSoundscape, { once: true });
     soundToggle.addEventListener("click", toggleSound);
     soundVolume.addEventListener("input", updateSoundVolume);
+    christmasToggle.addEventListener("click", toggleChristmasRainfall);
 
     async function initialize() {
         await engine.initialize();
         resizeview();
-
-        const chars = [" "];
-        let i;
-
-        for (i = 48; i <= 57; i++) {
-            chars.push(String.fromCharCode(i));
-        }
-
-        for (i = 12448; i <= 12543; i++) {
-            chars.push(String.fromCharCode(i));
-        }
-
-        await createCharSpriteSheet(chars);
+        await applyRainfallTheme(false);
         win.requestAnimationFrame(draw);
     }
 
@@ -817,6 +856,66 @@ var constructViewerWebGPU = constructViewerWebGPU || (function (win) {
         const volume = Number(soundVolume.value) / 100;
         soundscape.unlock();
         soundscape.setVolume(volume);
+    }
+
+    async function toggleChristmasRainfall() {
+        const enabled = christmasToggle.getAttribute("aria-pressed") !== "true";
+
+        christmasToggle.disabled = true;
+        christmasToggle.setAttribute("aria-pressed", enabled ? "true" : "false");
+        christmasToggle.setAttribute("aria-label", enabled ? "Turn Christmas rainfall off" : "Turn Christmas rainfall on");
+        christmasToggle.classList.toggle("is-active", enabled);
+        await applyRainfallTheme(enabled);
+        christmasToggle.disabled = false;
+    }
+
+    async function applyRainfallTheme(enabled) {
+        christmasMode = enabled;
+        settings.setTheme(enabled ? christmasTheme : matrixTheme);
+        activeChars = enabled ? createChristmasChars() : createMatrixChars();
+        await createCharSpriteSheet(activeChars);
+        construct.streams = [];
+        construct.viewResized();
+    }
+
+    function createMatrixChars() {
+        const chars = [" "];
+        let i;
+
+        for (i = 48; i <= 57; i++) {
+            chars.push(String.fromCharCode(i));
+        }
+
+        for (i = 12448; i <= 12543; i++) {
+            chars.push(String.fromCharCode(i));
+        }
+
+        return chars;
+    }
+
+    function createChristmasChars() {
+        const chars = [" "];
+        const holidayLetters = "MERRYCHRISTMASNOELJOYPEACE";
+        const holidaySymbols = [
+            0x002A,
+            0x002B,
+            0x005E,
+            0x007C,
+            0x2605,
+            0x2726,
+            0x2736,
+            0x2744
+        ];
+
+        for (let i = 0; i < holidayLetters.length; i++) {
+            chars.push(holidayLetters.charAt(i));
+        }
+
+        for (let i = 0; i < holidaySymbols.length; i++) {
+            chars.push(String.fromCodePoint(holidaySymbols[i]));
+        }
+
+        return chars;
     }
 
     function randint(min, max) {
@@ -850,20 +949,15 @@ var constructViewerWebGPU = constructViewerWebGPU || (function (win) {
         spriteWidth += 2;
         spriteHeight += 2;
 
-        let cols = Math.sqrt(chars.length);
-        let rows = cols;
-        if (cols - Math.floor(cols) > 0) {
-            rows += 1;
-        }
-        cols = Math.floor(cols);
-        rows = Math.floor(rows);
+        const cols = Math.ceil(Math.sqrt(chars.length));
+        const rows = Math.ceil(chars.length / cols);
 
         ctx.canvas.width = cols * spriteWidth;
         ctx.canvas.height = rows * spriteHeight;
         ctx.font = settings.font;
         ctx.textAlign = "center";
         ctx.textBaseline = "middle";
-        ctx.fillStyle = "white";
+        ctx.fillStyle = christmasMode ? "#f8d66d" : "white";
 
         ctx.clearRect(0, 0, ctx.canvas.width, ctx.canvas.height);
         for (let i = 0, ii = chars.length; i < ii; i++) {

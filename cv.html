@@ -19,11 +19,14 @@
 
 <body>
     <canvas id="view">Please use a modern browser to view this site</canvas>
-    <div class="sound-controls" aria-label="Sound controls">
+    <div class="sound-controls" role="group" aria-label="Sound controls">
         <button id="sound-toggle" class="sound-toggle" type="button" aria-label="Turn sound off" aria-pressed="true">
             <span class="sound-toggle__icon" aria-hidden="true"></span>
         </button>
         <input id="sound-volume" class="sound-volume" type="range" min="0" max="400" value="100" aria-label="Sound volume">
+        <button id="christmas-toggle" class="theme-toggle" type="button" aria-label="Turn Christmas rainfall on" aria-pressed="false">
+            <span class="theme-toggle__icon" aria-hidden="true"></span>
+        </button>
     </div>
     <script src="js/cv.js"></script>
     <script>

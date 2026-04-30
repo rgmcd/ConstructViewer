@@ -30,7 +30,8 @@ body {
     opacity: 0.9;
 }
 
-.sound-toggle {
+.sound-toggle,
+.theme-toggle {
     align-items: center;
     background: rgba(8, 15, 8, 0.58);
     border: 1px solid rgba(0, 250, 65, 0.42);
@@ -46,12 +47,16 @@ body {
 }
 
 .sound-toggle:hover,
-.sound-toggle:focus-visible {
+.sound-toggle:focus-visible,
+.theme-toggle:hover,
+.theme-toggle:focus-visible,
+.theme-toggle.is-active {
     background: rgba(8, 15, 8, 0.82);
     border-color: rgba(224, 250, 224, 0.76);
 }
 
-.sound-toggle:focus-visible {
+.sound-toggle:focus-visible,
+.theme-toggle:focus-visible {
     outline: 2px solid rgba(224, 250, 224, 0.82);
     outline-offset: 2px;
 }
@@ -111,4 +116,34 @@ body {
 .sound-volume:focus-visible {
     outline: 2px solid rgba(224, 250, 224, 0.82);
     outline-offset: 2px;
+}
+
+.theme-toggle__icon {
+    border-bottom: 16px solid #00FA41;
+    border-left: 9px solid transparent;
+    border-right: 9px solid transparent;
+    height: 0;
+    position: relative;
+    width: 0;
+}
+
+.theme-toggle__icon::before {
+    background: #F8D66D;
+    border-radius: 50%;
+    content: "";
+    height: 5px;
+    left: -2px;
+    position: absolute;
+    top: -2px;
+    width: 5px;
+}
+
+.theme-toggle__icon::after {
+    background: #B81D24;
+    content: "";
+    height: 5px;
+    left: -2px;
+    position: absolute;
+    top: 16px;
+    width: 4px;
 }

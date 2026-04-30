@@ -382,7 +382,7 @@ var constructViewerWebGPU = constructViewerWebGPU || (function (win) {
         }
 
         setVolume(volume) {
-            this.volume = Math.max(0, Math.min(1, volume));
+            this.volume = Math.max(0, Math.min(4, volume));
             this.applyMuteState();
         }
 

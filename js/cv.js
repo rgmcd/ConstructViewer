@@ -5,6 +5,7 @@ var constructViewerWebGPU = constructViewerWebGPU || (function (win) {
     const shaderSource = `
         struct Uniforms {
             canvasSize: vec2f,
+            spriteSize: vec2f,
         };
 
         struct VertexInput {
@@ -13,6 +14,7 @@ var constructViewerWebGPU = constructViewerWebGPU || (function (win) {
             @location(2) characterCoord: vec2f,
             @location(3) pixelColor: vec4f,
             @location(4) packetPosition: vec2f,
+            @location(5) flipped: f32,
         };
 
         struct VertexOutput {
@@ -34,8 +36,13 @@ var constructViewerWebGPU = constructViewerWebGPU || (function (win) {
             );
 
             var output: VertexOutput;
+            var localTexCoord = input.texCoord;
+            if (input.flipped > 0.5) {
+                localTexCoord.x = uniforms.spriteSize.x - input.texCoord.x;
+            }
+
             output.position = vec4f(clipPosition, 0.0, 1.0);
-            output.texCoord = input.texCoord + input.characterCoord;
+            output.texCoord = localTexCoord + input.characterCoord;
             output.pixelColor = input.pixelColor;
             return output;
         }
@@ -104,7 +111,7 @@ var constructViewerWebGPU = constructViewerWebGPU || (function (win) {
             });
 
             this.uniformBuffer = this.device.createBuffer({
-                size: 8,
+                size: 16,
                 usage: GPUBufferUsage.UNIFORM | GPUBufferUsage.COPY_DST
             });
         }
@@ -170,12 +177,13 @@ var constructViewerWebGPU = constructViewerWebGPU || (function (win) {
                             ]
                         },
                         {
-                            arrayStride: 8 * Float32Array.BYTES_PER_ELEMENT,
+                            arrayStride: 9 * Float32Array.BYTES_PER_ELEMENT,
                             stepMode: "instance",
                             attributes: [
                                 { shaderLocation: 2, offset: 0, format: "float32x2" },
                                 { shaderLocation: 3, offset: 2 * Float32Array.BYTES_PER_ELEMENT, format: "float32x4" },
-                                { shaderLocation: 4, offset: 6 * Float32Array.BYTES_PER_ELEMENT, format: "float32x2" }
+                                { shaderLocation: 4, offset: 6 * Float32Array.BYTES_PER_ELEMENT, format: "float32x2" },
+                                { shaderLocation: 5, offset: 8 * Float32Array.BYTES_PER_ELEMENT, format: "float32" }
                             ]
                         }
                     ]
@@ -256,7 +264,7 @@ var constructViewerWebGPU = constructViewerWebGPU || (function (win) {
             }
 
             const sheet = this.spriteSheet;
-            const floatsPerInstance = 8;
+            const floatsPerInstance = 9;
             const instanceData = new Float32Array(packets.length * floatsPerInstance);
             let packetsDrawn = 0;
 
@@ -269,11 +277,21 @@ var constructViewerWebGPU = constructViewerWebGPU || (function (win) {
                     instanceData.set(packet.color, bufferIndex + 2);
                     instanceData[bufferIndex + 6] = packet.stream.x;
                     instanceData[bufferIndex + 7] = packet.y;
+                    instanceData[bufferIndex + 8] = packet.flipped ? 1.0 : 0.0;
                     packetsDrawn++;
                 }
             }
 
-            this.device.queue.writeBuffer(this.uniformBuffer, 0, new Float32Array([view.width, view.height]));
+            this.device.queue.writeBuffer(
+                this.uniformBuffer,
+                0,
+                new Float32Array([
+                    view.width,
+                    view.height,
+                    sheet.normalizedSpriteWidth,
+                    sheet.normalizedSpriteHeight
+                ])
+            );
 
             const encoder = this.device.createCommandEncoder();
             const pass = encoder.beginRenderPass({
@@ -301,6 +319,150 @@ var constructViewerWebGPU = constructViewerWebGPU || (function (win) {
 
             pass.end();
             this.device.queue.submit([encoder.finish()]);
+        }
+    }
+
+    class Soundscape {
+        constructor() {
+            this.context = null;
+            this.masterGain = null;
+            this.delay = null;
+            this.feedbackGain = null;
+            this.highpass = null;
+            this.noiseBuffer = null;
+            this.lastTinkleTime = 0;
+            this.nextTinkleTime = 0;
+        }
+
+        unlock() {
+            if (this.context) {
+                if (this.context.state === "suspended") {
+                    this.context.resume();
+                }
+                return;
+            }
+
+            const AudioContext = win.AudioContext || win.webkitAudioContext;
+            if (!AudioContext) {
+                return;
+            }
+
+            this.context = new AudioContext();
+            this.masterGain = this.context.createGain();
+            this.masterGain.gain.value = 0.055;
+
+            this.highpass = this.context.createBiquadFilter();
+            this.highpass.type = "highpass";
+            this.highpass.frequency.value = 950;
+            this.highpass.Q.value = 0.7;
+
+            this.delay = this.context.createDelay(0.4);
+            this.delay.delayTime.value = 0.075;
+
+            this.feedbackGain = this.context.createGain();
+            this.feedbackGain.gain.value = 0.12;
+
+            this.delay.connect(this.feedbackGain);
+            this.feedbackGain.connect(this.delay);
+            this.highpass.connect(this.masterGain);
+            this.delay.connect(this.highpass);
+            this.masterGain.connect(this.context.destination);
+            this.noiseBuffer = this.createNoiseBuffer();
+        }
+
+        maybeTinkle(x) {
+            if (!this.context || this.context.state !== "running" || randint(1, 100) > 42) {
+                return;
+            }
+
+            const now = this.context.currentTime;
+            if (now < this.nextTinkleTime) {
+                return;
+            }
+
+            this.lastTinkleTime = now;
+            this.nextTinkleTime = now + randint(18, 95) / 1000;
+            this.playDrop(x / Math.max(view.width, 1), now + randint(0, 42) / 1000);
+        }
+
+        playDrop(position, now) {
+            const glassFrequencies = [1800, 2310, 2760, 3210, 3870, 4650, 5520];
+            const frequency = glassFrequencies[randint(0, glassFrequencies.length - 1)] * (randint(92, 108) / 100);
+            const duration = randint(32, 78) / 1000;
+            const pan = Math.max(-0.85, Math.min(0.85, position * 2 - 1));
+            const output = this.createPanner(pan);
+
+            output.connect(this.masterGain);
+            output.connect(this.delay);
+
+            this.playNoiseClick(output, now, frequency, duration);
+            this.playResonance(output, now, frequency, duration * 1.9, 0.16);
+            this.playResonance(output, now + 0.004, frequency * 1.51, duration * 1.15, 0.055);
+
+            win.setTimeout(function () {
+                output.disconnect();
+            }, (duration + 0.18) * 1000);
+        }
+
+        createPanner(pan) {
+            if (this.context.createStereoPanner) {
+                const panner = this.context.createStereoPanner();
+                panner.pan.value = pan;
+                return panner;
+            }
+
+            return this.context.createGain();
+        }
+
+        createNoiseBuffer() {
+            const length = Math.floor(this.context.sampleRate * 0.04);
+            const buffer = this.context.createBuffer(1, length, this.context.sampleRate);
+            const samples = buffer.getChannelData(0);
+
+            for (let i = 0; i < length; i++) {
+                samples[i] = Math.random() * 2 - 1;
+            }
+
+            return buffer;
+        }
+
+        playNoiseClick(output, startTime, frequency, duration) {
+            const source = this.context.createBufferSource();
+            const bandpass = this.context.createBiquadFilter();
+            const gain = this.context.createGain();
+
+            source.buffer = this.noiseBuffer;
+            bandpass.type = "bandpass";
+            bandpass.frequency.setValueAtTime(frequency, startTime);
+            bandpass.Q.value = 9;
+
+            gain.gain.setValueAtTime(0.0001, startTime);
+            gain.gain.exponentialRampToValueAtTime(0.42, startTime + 0.002);
+            gain.gain.exponentialRampToValueAtTime(0.0001, startTime + duration);
+
+            source.connect(bandpass);
+            bandpass.connect(gain);
+            gain.connect(output);
+            source.start(startTime);
+            source.stop(startTime + duration + 0.01);
+        }
+
+        playResonance(output, startTime, frequency, duration, level) {
+            const oscillator = this.context.createOscillator();
+            const gain = this.context.createGain();
+
+            oscillator.type = "sine";
+            oscillator.frequency.setValueAtTime(frequency, startTime);
+            oscillator.frequency.exponentialRampToValueAtTime(frequency * 0.992, startTime + duration);
+
+            gain.gain.setValueAtTime(0.0001, startTime);
+            gain.gain.exponentialRampToValueAtTime(level, startTime + 0.004);
+            gain.gain.exponentialRampToValueAtTime(0.0001, startTime + duration);
+
+            oscillator.connect(gain);
+            gain.connect(output);
+            oscillator.start(startTime);
+            oscillator.stop(startTime + duration + 0.03);
         }
     }
 
@@ -442,6 +604,8 @@ var constructViewerWebGPU = constructViewerWebGPU || (function (win) {
                     }
                 }
             }
+
+            soundscape.maybeTinkle(this.packets[i].stream.x);
         }
     }
 
@@ -489,6 +653,7 @@ var constructViewerWebGPU = constructViewerWebGPU || (function (win) {
     const doc = win.document;
     const view = doc.getElementById("view");
     const settings = new Settings();
+    const soundscape = new Soundscape();
     const construct = new Construct();
     const engine = new Engine(view);
     let iter = 0;
@@ -503,6 +668,9 @@ var constructViewerWebGPU = constructViewerWebGPU || (function (win) {
     win.addEventListener("resize", function () {
         resizeview();
     });
+
+    win.addEventListener("pointerdown", unlockSoundscape, { once: true });
+    win.addEventListener("keydown", unlockSoundscape, { once: true });
 
     async function initialize() {
         await engine.initialize();
@@ -529,8 +697,12 @@ var constructViewerWebGPU = constructViewerWebGPU || (function (win) {
         construct.viewResized();
     }
 
+    function unlockSoundscape() {
+        soundscape.unlock();
+    }
+
     function randint(min, max) {
-        return Math.floor(Math.random() * (max - min)) + min;
+        return Math.floor(Math.random() * (max - min + 1)) + min;
     }
 
     async function createCharSpriteSheet(chars) {

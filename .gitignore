@@ -1,0 +1,15 @@
+.vs/
+
+# OS and editor noise
+.DS_Store
+Thumbs.db
+DG1__DS_DIR_HDR
+
+# Dependencies and build output
+node_modules/
+dist/
+build/
+out/
+
+# Logs
+*.log

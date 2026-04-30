@@ -1,4 +1,4 @@
-const CACHE_NAME = "construct-viewer-webgpu-v11";
+const CACHE_NAME = "construct-viewer-webgpu-v14";
 const APP_ASSETS = [
     "./",
     "./cv.html",

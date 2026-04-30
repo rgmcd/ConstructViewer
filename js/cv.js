@@ -332,6 +332,8 @@ var constructViewerWebGPU = constructViewerWebGPU || (function (win) {
             this.noiseBuffer = null;
             this.bassGain = null;
             this.bassOscillators = [];
+            this.enabled = true;
+            this.volume = 1.0;
             this.lastTinkleTime = 0;
             this.nextTinkleTime = 0;
         }
@@ -371,10 +373,31 @@ var constructViewerWebGPU = constructViewerWebGPU || (function (win) {
             this.masterGain.connect(this.context.destination);
             this.noiseBuffer = this.createNoiseBuffer();
             this.startBassPulse();
+            this.applyMuteState();
+        }
+
+        setEnabled(enabled) {
+            this.enabled = enabled;
+            this.applyMuteState();
+        }
+
+        setVolume(volume) {
+            this.volume = Math.max(0, Math.min(1, volume));
+            this.applyMuteState();
+        }
+
+        applyMuteState() {
+            if (!this.masterGain || !this.context) {
+                return;
+            }
+
+            const now = this.context.currentTime;
+            this.masterGain.gain.cancelScheduledValues(now);
+            this.masterGain.gain.setTargetAtTime(this.enabled ? 0.055 * this.volume : 0.0001, now, 0.035);
         }
 
         maybeTinkle(x) {
-            if (!this.context || this.context.state !== "running" || randint(1, 100) > 42) {
+            if (!this.enabled || !this.context || this.context.state !== "running" || randint(1, 100) > 42) {
                 return;
             }
 
@@ -401,6 +424,9 @@ var constructViewerWebGPU = constructViewerWebGPU || (function (win) {
             this.playNoiseClick(output, now, frequency, duration);
             this.playResonance(output, now, frequency, duration * 1.9, 0.16);
             this.playResonance(output, now + 0.004, frequency * 1.51, duration * 1.15, 0.055);
+            if (randint(1, 100) <= 38) {
+                this.playModemChirp(output, now + randint(0, 18) / 1000, duration * randint(70, 135) / 100);
+            }
 
             win.setTimeout(function () {
                 output.disconnect();
@@ -466,6 +492,35 @@ var constructViewerWebGPU = constructViewerWebGPU || (function (win) {
             gain.connect(output);
             oscillator.start(startTime);
             oscillator.stop(startTime + duration + 0.03);
+        }
+
+        playModemChirp(output, startTime, duration) {
+            const oscillator = this.context.createOscillator();
+            const gain = this.context.createGain();
+            const filter = this.context.createBiquadFilter();
+            const startFrequency = randint(620, 1320);
+            const endFrequency = randint(1500, 3600);
+
+            oscillator.type = randint(0, 1) ? "square" : "sawtooth";
+            oscillator.frequency.setValueAtTime(startFrequency, startTime);
+            oscillator.frequency.exponentialRampToValueAtTime(endFrequency, startTime + duration * 0.45);
+            oscillator.frequency.exponentialRampToValueAtTime(randint(720, 1800), startTime + duration);
+
+            filter.type = "bandpass";
+            filter.frequency.setValueAtTime(randint(1200, 2400), startTime);
+            filter.frequency.linearRampToValueAtTime(randint(1700, 3200), startTime + duration);
+            filter.Q.value = 5.5;
+
+            gain.gain.setValueAtTime(0.0001, startTime);
+            gain.gain.exponentialRampToValueAtTime(0.035, startTime + 0.004);
+            gain.gain.setValueAtTime(0.026, startTime + duration * 0.42);
+            gain.gain.exponentialRampToValueAtTime(0.0001, startTime + duration);
+
+            oscillator.connect(filter);
+            filter.connect(gain);
+            gain.connect(output);
+            oscillator.start(startTime);
+            oscillator.stop(startTime + duration + 0.02);
         }
 
         startBassPulse() {
@@ -696,6 +751,8 @@ var constructViewerWebGPU = constructViewerWebGPU || (function (win) {
 
     const doc = win.document;
     const view = doc.getElementById("view");
+    const soundToggle = doc.getElementById("sound-toggle");
+    const soundVolume = doc.getElementById("sound-volume");
     const settings = new Settings();
     const soundscape = new Soundscape();
     const construct = new Construct();
@@ -715,6 +772,8 @@ var constructViewerWebGPU = constructViewerWebGPU || (function (win) {
 
     win.addEventListener("pointerdown", unlockSoundscape, { once: true });
     win.addEventListener("keydown", unlockSoundscape, { once: true });
+    soundToggle.addEventListener("click", toggleSound);
+    soundVolume.addEventListener("input", updateSoundVolume);
 
     async function initialize() {
         await engine.initialize();
@@ -743,6 +802,21 @@ var constructViewerWebGPU = constructViewerWebGPU || (function (win) {
 
     function unlockSoundscape() {
         soundscape.unlock();
+    }
+
+    function toggleSound() {
+        const enabled = soundToggle.getAttribute("aria-pressed") !== "true";
+        soundToggle.setAttribute("aria-pressed", enabled ? "true" : "false");
+        soundToggle.setAttribute("aria-label", enabled ? "Turn sound off" : "Turn sound on");
+        soundToggle.classList.toggle("is-muted", !enabled);
+        soundscape.unlock();
+        soundscape.setEnabled(enabled);
+    }
+
+    function updateSoundVolume() {
+        const volume = Number(soundVolume.value) / 100;
+        soundscape.unlock();
+        soundscape.setVolume(volume);
     }
 
     function randint(min, max) {

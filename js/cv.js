@@ -330,6 +330,8 @@ var constructViewerWebGPU = constructViewerWebGPU || (function (win) {
             this.feedbackGain = null;
             this.highpass = null;
             this.noiseBuffer = null;
+            this.bassGain = null;
+            this.bassOscillators = [];
             this.lastTinkleTime = 0;
             this.nextTinkleTime = 0;
         }
@@ -353,8 +355,8 @@ var constructViewerWebGPU = constructViewerWebGPU || (function (win) {
 
             this.highpass = this.context.createBiquadFilter();
             this.highpass.type = "highpass";
-            this.highpass.frequency.value = 950;
-            this.highpass.Q.value = 0.7;
+            this.highpass.frequency.value = 520;
+            this.highpass.Q.value = 0.45;
 
             this.delay = this.context.createDelay(0.4);
             this.delay.delayTime.value = 0.075;
@@ -368,6 +370,7 @@ var constructViewerWebGPU = constructViewerWebGPU || (function (win) {
             this.delay.connect(this.highpass);
             this.masterGain.connect(this.context.destination);
             this.noiseBuffer = this.createNoiseBuffer();
+            this.startBassPulse();
         }
 
         maybeTinkle(x) {
@@ -386,8 +389,8 @@ var constructViewerWebGPU = constructViewerWebGPU || (function (win) {
         }
 
         playDrop(position, now) {
-            const glassFrequencies = [1800, 2310, 2760, 3210, 3870, 4650, 5520];
-            const frequency = glassFrequencies[randint(0, glassFrequencies.length - 1)] * (randint(92, 108) / 100);
+            const glassFrequencies = [920, 1180, 1420, 1710, 2050, 2470, 2960];
+            const frequency = glassFrequencies[randint(0, glassFrequencies.length - 1)] * (randint(94, 106) / 100);
             const duration = randint(32, 78) / 1000;
             const pan = Math.max(-0.85, Math.min(0.85, position * 2 - 1));
             const output = this.createPanner(pan);
@@ -463,6 +466,47 @@ var constructViewerWebGPU = constructViewerWebGPU || (function (win) {
             gain.connect(output);
             oscillator.start(startTime);
             oscillator.stop(startTime + duration + 0.03);
+        }
+
+        startBassPulse() {
+            const now = this.context.currentTime;
+            const lowpass = this.context.createBiquadFilter();
+            const pulse = this.context.createOscillator();
+            const pulseDepth = this.context.createGain();
+            const bassGain = this.context.createGain();
+            const frequencies = [55.0, 82.41, 110.0, 165.0];
+
+            this.bassGain = bassGain;
+            bassGain.gain.setValueAtTime(0.0001, now);
+            bassGain.gain.exponentialRampToValueAtTime(0.24, now + 0.8);
+
+            lowpass.type = "lowpass";
+            lowpass.frequency.value = 260;
+            lowpass.Q.value = 0.55;
+
+            for (let i = 0; i < frequencies.length; i++) {
+                const oscillator = this.context.createOscillator();
+                const gain = this.context.createGain();
+
+                oscillator.type = i === 0 ? "sine" : "triangle";
+                oscillator.frequency.value = frequencies[i];
+                gain.gain.value = [0.75, 0.34, 0.18, 0.08][i];
+                oscillator.connect(gain);
+                gain.connect(lowpass);
+                oscillator.start(now);
+                this.bassOscillators.push(oscillator);
+            }
+
+            pulse.type = "sine";
+            pulse.frequency.value = 0.68;
+            pulseDepth.gain.value = 0.115;
+            pulse.connect(pulseDepth);
+            pulseDepth.connect(bassGain.gain);
+            pulse.start(now);
+            this.bassOscillators.push(pulse);
+
+            lowpass.connect(bassGain);
+            bassGain.connect(this.masterGain);
         }
     }
 

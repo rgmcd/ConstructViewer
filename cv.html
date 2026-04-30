@@ -4,9 +4,15 @@
 <head>
     <meta charset="utf-8">
     <meta name="viewport" content="width=device-width, initial-scale=1">
+    <meta name="theme-color" content="#080f08">
+    <meta name="mobile-web-app-capable" content="yes">
+    <meta name="apple-mobile-web-app-capable" content="yes">
+    <meta name="apple-mobile-web-app-title" content="CV WebGPU">
 
     <title>Construct Viewer - WebGPU</title>
 
+    <link rel="icon" href="img/favicon.svg" type="image/svg+xml">
+    <link rel="apple-touch-icon" href="img/icon-192.png">
     <link rel="stylesheet" href="css/cv.css" />
     <link rel="manifest" href="manifest.json">
 </head>
@@ -14,6 +20,15 @@
 <body>
     <canvas id="view">Please use a modern browser to view this site</canvas>
     <script src="js/cv.js"></script>
+    <script>
+        if ("serviceWorker" in navigator) {
+            window.addEventListener("load", function () {
+                navigator.serviceWorker.register("sw.js").catch(function (error) {
+                    console.warn("Service worker registration failed.", error);
+                });
+            });
+        }
+    </script>
 </body>
 
 </html>

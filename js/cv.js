@@ -423,7 +423,11 @@ var constructViewerWebGPU = constructViewerWebGPU || (function (win) {
 
             this.lastTinkleTime = now;
             this.nextTinkleTime = now + randint(18, 95) / 1000;
-            this.playDrop(x / Math.max(view.width, 1), now + randint(0, 42) / 1000);
+            if (christmasMode) {
+                this.playJingleBell(x / Math.max(view.width, 1), now + randint(0, 42) / 1000);
+            } else {
+                this.playDrop(x / Math.max(view.width, 1), now + randint(0, 42) / 1000);
+            }
         }
 
         playDrop(position, now) {
@@ -536,6 +540,51 @@ var constructViewerWebGPU = constructViewerWebGPU || (function (win) {
             gain.connect(output);
             oscillator.start(startTime);
             oscillator.stop(startTime + duration + 0.02);
+        }
+
+        playJingleBell(position, now) {
+            const pan = Math.max(-0.85, Math.min(0.85, position * 2 - 1));
+            const output = this.createPanner(pan);
+            const bellCount = randint(2, 4);
+            const bellFrequencies = [1568, 1760, 1976, 2349, 2637, 3136, 3520];
+
+            output.connect(this.masterGain);
+            output.connect(this.delay);
+
+            for (let i = 0; i < bellCount; i++) {
+                const startTime = now + i * randint(10, 24) / 1000;
+                const frequency = bellFrequencies[randint(0, bellFrequencies.length - 1)] * (randint(97, 103) / 100);
+                const duration = randint(110, 220) / 1000;
+
+                this.playBellStrike(output, startTime, frequency, duration);
+                this.playResonance(output, startTime + 0.006, frequency * 2.02, duration * 0.55, 0.035);
+            }
+
+            win.setTimeout(function () {
+                output.disconnect();
+            }, 460);
+        }
+
+        playBellStrike(output, startTime, frequency, duration) {
+            const source = this.context.createBufferSource();
+            const bandpass = this.context.createBiquadFilter();
+            const gain = this.context.createGain();
+
+            source.buffer = this.noiseBuffer;
+            bandpass.type = "bandpass";
+            bandpass.frequency.setValueAtTime(frequency, startTime);
+            bandpass.frequency.exponentialRampToValueAtTime(frequency * 1.08, startTime + duration);
+            bandpass.Q.value = 15;
+
+            gain.gain.setValueAtTime(0.0001, startTime);
+            gain.gain.exponentialRampToValueAtTime(0.2, startTime + 0.003);
+            gain.gain.exponentialRampToValueAtTime(0.0001, startTime + duration);
+
+            source.connect(bandpass);
+            bandpass.connect(gain);
+            gain.connect(output);
+            source.start(startTime);
+            source.stop(startTime + duration + 0.02);
         }
 
         startBassPulse() {

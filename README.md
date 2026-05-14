@@ -2,6 +2,8 @@
 
 Construct Viewer is a locally installable WebGPU digital-rain experience. It renders falling glyph streams on a full-screen canvas, adds procedural audio, and includes a seasonal Christmas rainfall mode because sometimes the construct needs sleigh bells.
 
+Live view: https://project-guh9u.vercel.app/
+
 ## Features
 
 - WebGPU-powered falling glyph renderer
